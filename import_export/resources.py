@@ -282,6 +282,7 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         """
         Override to add additional logic.
         """
+
         pass
 
     def import_data(self, dataset, dry_run=False, raise_errors=False,
@@ -293,6 +294,10 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
             If ``True`` import process will be processed inside transaction.
             If ``dry_run`` is set, or error occurs, transaction will be rolled
             back.
+
+        if defined Resource class has a dataset validator,
+        the ``dataset`` will be checked against it. this happens before
+        call of ``before_import`` is called
         """
         result = Result()
         result.diff_headers = self.get_diff_headers()
@@ -308,6 +313,13 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
             transaction.managed(True)
         else:
             real_dry_run = dry_run
+
+        if hasattr(self._meta, 'dataset_validator'):
+            validator = getattr(self._meta, 'dataset_validator')(dataset)
+            if not validator.is_valid:
+                for err in validator.errors:
+                    result.base_errors.append(Error(err))
+                return result
 
         try:
             self.before_import(dataset, real_dry_run)
@@ -326,6 +338,16 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
             try:
                 row_result = RowResult()
                 instance, new = self.get_or_init_instance(instance_loader, row)
+
+                if hasattr(self._meta, 'instance_validator'):
+                    validator = getattr(self._meta, 'instance_validator')(instance)
+                    instance_valid = validator.is_valid
+                    instance_errors = validator.errors
+                    if not validator.is_valid:
+                        for err in validator.errors:
+                            result.base_errors.append(Error(err))
+                        return result
+
                 if new:
                     row_result.import_type = RowResult.IMPORT_TYPE_NEW
                     instance_created.send(sender=self, row=row, instance=instance)
