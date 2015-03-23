@@ -17,6 +17,11 @@ from django.db.models.related import RelatedObject
 from django.conf import settings
 
 from .results import Error, Result, RowResult
+from .signals import (import_finished,
+                      row_skipped,
+                      instance_created,
+                      instance_deleted,
+                      instance_updated)
 from .fields import Field
 from import_export import widgets
 from .instance_loaders import (
@@ -323,17 +328,21 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
                 instance, new = self.get_or_init_instance(instance_loader, row)
                 if new:
                     row_result.import_type = RowResult.IMPORT_TYPE_NEW
+                    instance_created.send(sender=self, row=row, instance=instance)
                 else:
                     row_result.import_type = RowResult.IMPORT_TYPE_UPDATE
+                    instance_updated.send(sender=self, row=row, instance=instance)
                 row_result.new_record = new
                 original = deepcopy(instance)
                 if self.for_delete(row, instance):
                     if new:
                         row_result.import_type = RowResult.IMPORT_TYPE_SKIP
+                        row_skipped.send(sender=self, row=row, instance=instance)
                         row_result.diff = self.get_diff(None, None,
                                 real_dry_run)
                     else:
                         row_result.import_type = RowResult.IMPORT_TYPE_DELETE
+                        instance_deleted.send(sender=self, row=row, instance=instance)
                         self.delete_instance(instance, real_dry_run)
                         row_result.diff = self.get_diff(original, None,
                                 real_dry_run)
@@ -341,6 +350,8 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
                     self.import_obj(instance, row, real_dry_run)
                     if self.skip_row(instance, original):
                         row_result.import_type = RowResult.IMPORT_TYPE_SKIP
+                        row_skipped.send(sender=self, row=row, instance=instance)
+
                     else:
                         self.save_instance(instance, real_dry_run)
                         self.save_m2m(instance, row, real_dry_run)
@@ -367,6 +378,8 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
             else:
                 transaction.commit()
             transaction.leave_transaction_management()
+
+        import_finished.send(self, result=result)
 
         return result
 
