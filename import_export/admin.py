@@ -136,7 +136,7 @@ class ImportMixin(ImportExportMixinBase):
             dataset = input_format.create_dataset(data)
 
             result = resource.import_data(dataset, dry_run=False,
-                                 raise_errors=True)
+                                          raise_errors=True)
 
             if not self.get_skip_admin_log():
                 # Add imported objects to LogEntry
